@@ -3,5 +3,5 @@
   "uuid": "kimi-status@panel.local",
   "description": "Показывает остаток лимитов Kimi Code (5ч окно и месячный) в панели GNOME Shell",
   "shell-version": ["45", "46", "47", "48", "49", "50"],
-  "version": "1.0.0"
+  "version": "1.1.0"
 }

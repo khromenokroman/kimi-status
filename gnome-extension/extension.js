@@ -64,14 +64,17 @@ function formatLimitLine(label, entry) {
 }
 
 function formatPanelLabel(data) {
-    // Основной лимит: 5ч окно, если нет то месячное
+    // Однотипно с claude-status: на панели только короткие проценты,
+    // детализация в меню.
     const parts = [];
     if (data.five_hour && data.five_hour.utilization !== null)
         parts.push(`5ч: ${Math.round(data.five_hour.utilization)}%`);
-    if (data.seven_day && data.seven_day.utilization !== null)
-        parts.push(`7д: ${Math.round(data.seven_day.utilization)}%`);
-    if (parts.length === 0 && data.month_total && data.month_total.utilization !== null)
+    if (data.month_total && data.month_total.utilization !== null)
         parts.push(`мес: ${Math.round(data.month_total.utilization)}%`);
+    if (parts.length === 0 && data.seven_day && data.seven_day.utilization !== null)
+        parts.push(`7д: ${Math.round(data.seven_day.utilization)}%`);
+    if (parts.length === 0 && data.month_code && data.month_code.utilization !== null)
+        parts.push(`мес: ${Math.round(data.month_code.utilization)}%`);
     return parts.join(' | ') || 'Kimi';
 }
 
@@ -234,7 +237,9 @@ class KimiStatusIndicator {
         this._line2.set_text('');
         this._line3.set_text('');
 
-        const cmd = `${PYTHON_BIN} ${SCRIPT_PATH} > ${TMP_FILE} 2>&1`;
+        // stdout -> TMP_FILE (JSON), stderr -> /dev/null
+        // (скрипт пишет в stderr INFO/ошибки, они не должны попасть в JSON)
+        const cmd = `${PYTHON_BIN} ${SCRIPT_PATH} > ${TMP_FILE} 2>/dev/null`;
         const argv = ['/bin/sh', '-c', cmd];
 
         try {
@@ -307,7 +312,7 @@ class KimiStatusIndicator {
         // Меню: детали
         const line1 = formatLimitLine('5ч окно', data.five_hour);
         const line2 = formatLimitLine('7д окно', data.seven_day);
-        const line3 = formatLimitLine('Месяц (code)', data.month_code);
+        const line3 = formatLimitLine('Месяц', data.month_total || data.month_code);
 
         // Собираем непустые строки
         const lines = [line1, line2, line3].filter(l => l !== '');
