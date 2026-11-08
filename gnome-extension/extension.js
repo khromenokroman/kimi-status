@@ -177,18 +177,25 @@ class KimiStatusIndicator {
 
         const line1Item = new PopupMenu.PopupMenuItem('загрузка…');
         this._line1 = line1Item.label;
+        this._line1Item = line1Item;
         this._menu.addMenuItem(line1Item);
 
         const line2Item = new PopupMenu.PopupMenuItem('');
         this._line2 = line2Item.label;
+        this._line2Item = line2Item;
+        this._line2Item.hide();
         this._menu.addMenuItem(line2Item);
 
         const line3Item = new PopupMenu.PopupMenuItem('');
         this._line3 = line3Item.label;
+        this._line3Item = line3Item;
+        this._line3Item.hide();
         this._menu.addMenuItem(line3Item);
 
         const boosterItem = new PopupMenu.PopupMenuItem('');
         this._boosterLine = boosterItem.label;
+        this._boosterItem = boosterItem;
+        this._boosterItem.hide();
         this._menu.addMenuItem(boosterItem);
 
         const timeItem = new PopupMenu.PopupMenuItem('');
@@ -289,8 +296,12 @@ class KimiStatusIndicator {
         } else {
             this._label.set_text('Kimi');
             this._line1.set_text('Ошибка');
+            this._line1Item.show();
             this._line2.set_text(error.slice(0, 200));
+            this._line2Item.show();
             this._line3.set_text('');
+            this._line3Item.hide();
+            this._boosterItem.hide();
             this._timeLine.set_text('Время обновления: нет данных');
             this._planLine.set_text('Тариф: неизвестен');
         }
@@ -314,11 +325,14 @@ class KimiStatusIndicator {
         const line2 = formatLimitLine('7д окно', data.seven_day);
         const line3 = formatLimitLine('Месяц', data.month_total || data.month_code);
 
-        // Собираем непустые строки
+        // Показываем только непустые строки, пустые скрываем
         const lines = [line1, line2, line3].filter(l => l !== '');
         this._line1.set_text(lines[0] || 'Нет активных лимитов');
+        this._line1Item.show();
         this._line2.set_text(lines[1] || '');
+        this._line2Item.set_visible(lines[1] !== '');
         this._line3.set_text(lines[2] || '');
+        this._line3Item.set_visible(lines[2] !== '');
 
         // Бустеры (опционально)
         if (data.booster && data.booster.balance > 0) {
@@ -326,8 +340,10 @@ class KimiStatusIndicator {
             if (data.booster.monthly_limit_enabled)
                 b += ` (лимит ${data.booster.monthly_used}/${data.booster.monthly_limit})`;
             this._boosterLine.set_text(b);
+            this._boosterItem.show();
         } else {
             this._boosterLine.set_text('');
+            this._boosterItem.hide();
         }
 
         // Время последнего обновления
