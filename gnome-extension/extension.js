@@ -1,6 +1,7 @@
 // Kimi Code Limits Indicator для GNOME Shell 48+
 // Показывает процент использования лимитов Kimi Code в панели,
 // при клике раскрывается меню с деталями.
+// Структура и поведение как в claude-status.
 
 import GLib from 'gi://GLib';
 import Gio from 'gi://Gio';
@@ -54,27 +55,21 @@ function formatCountdown(resetsAt) {
     return `${s}с`;
 }
 
-function formatLimitLine(label, entry) {
-    if (!entry || entry.utilization === null || entry.utilization === undefined)
+function formatLimitLine(label, utilization, resetsAt) {
+    if (utilization === null || utilization === undefined)
         return '';
-    const pct = Math.round(entry.utilization);
-    const countdown = formatCountdown(entry.resets_at);
+    const pct = Math.round(utilization);
+    const countdown = formatCountdown(resetsAt);
     const cd = countdown ? `, сброс через ${countdown}` : '';
     return `${label}: ${pct}%${cd}`;
 }
 
-function formatPanelLabel(data) {
-    // Однотипно с claude-status: на панели только короткие проценты,
-    // детализация в меню.
+function formatPanelLabel(fiveHour, month) {
     const parts = [];
-    if (data.five_hour && data.five_hour.utilization !== null)
-        parts.push(`5ч: ${Math.round(data.five_hour.utilization)}%`);
-    if (data.month_total && data.month_total.utilization !== null)
-        parts.push(`мес: ${Math.round(data.month_total.utilization)}%`);
-    if (parts.length === 0 && data.seven_day && data.seven_day.utilization !== null)
-        parts.push(`7д: ${Math.round(data.seven_day.utilization)}%`);
-    if (parts.length === 0 && data.month_code && data.month_code.utilization !== null)
-        parts.push(`мес: ${Math.round(data.month_code.utilization)}%`);
+    if (fiveHour && fiveHour.utilization !== null)
+        parts.push(`5ч: ${Math.round(fiveHour.utilization)}%`);
+    if (month && month.utilization !== null)
+        parts.push(`мес: ${Math.round(month.utilization)}%`);
     return parts.join(' | ') || 'Kimi';
 }
 
@@ -132,6 +127,8 @@ class KimiStatusIndicator {
     }
 
     _addToPanel() {
+        // По умолчанию: справа в _rightBox
+        let position = 0;
         let box = 'right';
 
         // Пытаемся вставить слева от индикатора клавиатуры (языка)
@@ -148,6 +145,7 @@ class KimiStatusIndicator {
                     if (idx >= 0) {
                         parent.insert_child_at_index(this._button.container, idx);
                         box = null; // уже добавили вручную
+                        position = idx;
                     }
                 }
             }
@@ -156,7 +154,7 @@ class KimiStatusIndicator {
         }
 
         if (box !== null) {
-            Main.panel.addToStatusArea('kimiStatus', this._button);
+            Main.panel.addToStatusArea('kimiStatus', this._button, position, box);
         } else {
             // Ручное добавление: регистрируем в statusArea
             Main.panel.statusArea['kimiStatus'] = this._button;
@@ -177,26 +175,11 @@ class KimiStatusIndicator {
 
         const line1Item = new PopupMenu.PopupMenuItem('загрузка…');
         this._line1 = line1Item.label;
-        this._line1Item = line1Item;
         this._menu.addMenuItem(line1Item);
 
         const line2Item = new PopupMenu.PopupMenuItem('');
         this._line2 = line2Item.label;
-        this._line2Item = line2Item;
-        this._line2Item.hide();
         this._menu.addMenuItem(line2Item);
-
-        const line3Item = new PopupMenu.PopupMenuItem('');
-        this._line3 = line3Item.label;
-        this._line3Item = line3Item;
-        this._line3Item.hide();
-        this._menu.addMenuItem(line3Item);
-
-        const boosterItem = new PopupMenu.PopupMenuItem('');
-        this._boosterLine = boosterItem.label;
-        this._boosterItem = boosterItem;
-        this._boosterItem.hide();
-        this._menu.addMenuItem(boosterItem);
 
         const timeItem = new PopupMenu.PopupMenuItem('');
         this._timeLine = timeItem.label;
@@ -216,7 +199,7 @@ class KimiStatusIndicator {
 
         const linkItem = new PopupMenu.PopupMenuItem('Открыть страницу лимитов');
         linkItem.connect('activate', () => {
-            const url = 'https://www.kimi.com/code';
+            const url = 'https://www.kimi.ai/settings/subscription';
             const ctx = global.create_app_launch_context(0, -1);
             Gio.AppInfo.launch_default_for_uri(url, ctx);
         });
@@ -242,10 +225,9 @@ class KimiStatusIndicator {
 
         this._line1.set_text('загрузка…');
         this._line2.set_text('');
-        this._line3.set_text('');
 
-        // stdout -> TMP_FILE (JSON), stderr -> /dev/null
-        // (скрипт пишет в stderr INFO/ошибки, они не должны попасть в JSON)
+        // stderr -> /dev/null: скрипт пишет INFO в stderr при обновлении токена,
+        // 2>&1 ломает JSON.parse (см. claude-status, но там stderr чистый)
         const cmd = `${PYTHON_BIN} ${SCRIPT_PATH} > ${TMP_FILE} 2>/dev/null`;
         const argv = ['/bin/sh', '-c', cmd];
 
@@ -296,12 +278,7 @@ class KimiStatusIndicator {
         } else {
             this._label.set_text('Kimi');
             this._line1.set_text('Ошибка');
-            this._line1Item.show();
             this._line2.set_text(error.slice(0, 200));
-            this._line2Item.show();
-            this._line3.set_text('');
-            this._line3Item.hide();
-            this._boosterItem.hide();
             this._timeLine.set_text('Время обновления: нет данных');
             this._planLine.set_text('Тариф: неизвестен');
         }
@@ -318,33 +295,21 @@ class KimiStatusIndicator {
         this._lastUpdate = new Date();
 
         // Текст на панели: "5ч: 2% | мес: 23%"
-        this._label.set_text(formatPanelLabel(data));
+        this._label.set_text(
+            formatPanelLabel(data.five_hour, data.month_total || data.month_code)
+        );
 
         // Меню: детали
-        const line1 = formatLimitLine('5ч окно', data.five_hour);
-        const line2 = formatLimitLine('7д окно', data.seven_day);
-        const line3 = formatLimitLine('Месяц', data.month_total || data.month_code);
-
-        // Показываем только непустые строки, пустые скрываем
-        const lines = [line1, line2, line3].filter(l => l !== '');
-        this._line1.set_text(lines[0] || 'Нет активных лимитов');
-        this._line1Item.show();
-        this._line2.set_text(lines[1] || '');
-        this._line2Item.set_visible(lines[1] !== '');
-        this._line3.set_text(lines[2] || '');
-        this._line3Item.set_visible(lines[2] !== '');
-
-        // Бустеры (опционально)
-        if (data.booster && data.booster.balance > 0) {
-            let b = `Бустеры: ${data.booster.balance} / ${data.booster.total} ${data.booster.currency}`;
-            if (data.booster.monthly_limit_enabled)
-                b += ` (лимит ${data.booster.monthly_used}/${data.booster.monthly_limit})`;
-            this._boosterLine.set_text(b);
-            this._boosterItem.show();
-        } else {
-            this._boosterLine.set_text('');
-            this._boosterItem.hide();
-        }
+        this._line1.set_text(
+            formatLimitLine('5ч окно',
+                data.five_hour?.utilization,
+                data.five_hour?.resets_at)
+        );
+        this._line2.set_text(
+            formatLimitLine('Месяц',
+                (data.month_total || data.month_code)?.utilization,
+                (data.month_total || data.month_code)?.resets_at)
+        );
 
         // Время последнего обновления
         if (this._lastUpdate) {
